@@ -1,0 +1,20 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://ckgmv2qtyfywr"]
+
+[ext_resource type="Shader" uid="uid://dvp16erqvnkgh" path="res://posterization.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/levels = 16
+shader_parameter/levels_r = 16
+shader_parameter/levels_g = 16
+shader_parameter/levels_b = 8
+shader_parameter/use_separate_levels = false
+shader_parameter/enable_posterization = true
+shader_parameter/brightness = 1.0
+shader_parameter/contrast = 1.0
+shader_parameter/saturation = 1.0
+shader_parameter/gamma = 1.0
+shader_parameter/tint_color = Color(1, 1, 1, 1)
+shader_parameter/tint_strength = 0.0
+shader_parameter/edge_threshold = 0.0
+shader_parameter/enable_edge_detection = false

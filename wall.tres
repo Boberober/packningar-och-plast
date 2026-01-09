@@ -1,0 +1,7 @@
+[gd_resource type="StandardMaterial3D" load_steps=2 format=3 uid="uid://cl8ai2ulo8x54"]
+
+[ext_resource type="Texture2D" uid="uid://b7tko45xaqx6m" path="res://concrete_floor_worn_001_diff_1k.jpg" id="1_x2gcn"]
+
+[resource]
+albedo_texture = ExtResource("1_x2gcn")
+uv1_scale = Vector3(3.445, 3.445, 3.445)
