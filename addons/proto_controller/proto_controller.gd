@@ -48,6 +48,7 @@ var mouse_captured: bool = false
 var look_rotation: Vector2
 var move_speed: float = 0.0
 var freeflying: bool = false
+var current_interactable_target = null
 
 
 ## IMPORTANT REFERENCES
@@ -59,179 +60,197 @@ var freeflying: bool = false
 var debug_arrow: MeshInstance3D = null
 
 func _ready() -> void:
-  check_input_mappings()
-  look_rotation.y = rotation.y
-  look_rotation.x = head.rotation.x
+    check_input_mappings()
+    look_rotation.y = rotation.y
+    look_rotation.x = head.rotation.x
 
 func _unhandled_input(event: InputEvent) -> void:
-  # Mouse capturing
-  if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-    capture_mouse()
-  if Input.is_key_pressed(KEY_ESCAPE):
-    release_mouse()
-  
-  # Look around
-  if mouse_captured and event is InputEventMouseMotion:
-    rotate_look(event.relative)
-  
-  # Toggle freefly mode
-  if can_freefly and Input.is_action_just_pressed(input_freefly):
-    if not freeflying:
-      enable_freefly()
-    else:
-      disable_freefly()
+    # Mouse capturing
+    if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+        capture_mouse()
+    if Input.is_key_pressed(KEY_ESCAPE):
+        release_mouse()
+    
+    # Look around
+    if mouse_captured and event is InputEventMouseMotion:
+        rotate_look(event.relative)
+    
+    # Toggle freefly mode
+    if can_freefly and Input.is_action_just_pressed(input_freefly):
+        if not freeflying:
+            enable_freefly()
+        else:
+            disable_freefly()
 
 func _physics_process(delta: float) -> void:
-  # If freeflying, handle freefly and nothing else
-  if can_freefly and freeflying:
-    var input_dir := Input.get_vector(input_left, input_right, input_forward, input_back)
-    var motion := (head.global_basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
-    motion *= freefly_speed * delta
-    move_and_collide(motion)
-    return
-  
-  # Apply gravity to velocity
-  if has_gravity:
-    if not is_on_floor():
-      velocity += get_gravity() * delta
+    # If freeflying, handle freefly and nothing else
+    if can_freefly and freeflying:
+        var input_dir := Input.get_vector(input_left, input_right, input_forward, input_back)
+        var motion := (head.global_basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+        motion *= freefly_speed * delta
+        move_and_collide(motion)
+        return
+    
+    # Apply gravity to velocity
+    if has_gravity:
+        if not is_on_floor():
+            velocity += get_gravity() * delta
 
-  # Apply jumping
-  if can_jump:
-    if Input.is_action_just_pressed(input_jump) and is_on_floor():
-      velocity.y = jump_velocity
+    # Apply jumping
+    if can_jump:
+        if Input.is_action_just_pressed(input_jump) and is_on_floor():
+            velocity.y = jump_velocity
 
-  # Modify speed based on sprinting
-  if can_sprint and Input.is_action_pressed(input_sprint):
-      move_speed = sprint_speed
-  else:
-    move_speed = base_speed
-
-  # Apply desired movement to velocity
-  if can_move:
-    var input_dir := Input.get_vector(input_left, input_right, input_forward, input_back)
-    var move_dir := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
-    if move_dir:
-      velocity.x = move_dir.x * move_speed
-      velocity.z = move_dir.z * move_speed
+    # Modify speed based on sprinting
+    if can_sprint and Input.is_action_pressed(input_sprint):
+        move_speed = sprint_speed
     else:
-      velocity.x = move_toward(velocity.x, 0, move_speed)
-      velocity.z = move_toward(velocity.z, 0, move_speed)
-  else:
-    velocity.x = 0
-    velocity.y = 0
-  
-  # Use velocity to actually move
-  move_and_slide()
+        move_speed = base_speed
 
-  if raycast.is_colliding():
-    %Label.text = raycast.get_collider().name
-
-    if Input.is_action_just_pressed("interact"):
-      raycast.get_collider().interact(self.global_position)
+    # Apply desired movement to velocity
+    if can_move:
+        var input_dir := Input.get_vector(input_left, input_right, input_forward, input_back)
+        var move_dir := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+        if move_dir:
+            velocity.x = move_dir.x * move_speed
+            velocity.z = move_dir.z * move_speed
+        else:
+            velocity.x = move_toward(velocity.x, 0, move_speed)
+            velocity.z = move_toward(velocity.z, 0, move_speed)
+    else:
+        velocity.x = 0
+        velocity.y = 0
     
-    # Draw arrow to collision point
-    var raycast_end := raycast.get_collision_point()
-    draw_debug_arrow(raycast_end)
-    var collision_normal := raycast.get_collision_normal()
+    # Use velocity to actually move
+    move_and_slide()
 
-    if debug_arrow:
-      debug_arrow.queue_free()
-      debug_arrow = null
+    if raycast.is_colliding():
+        var collider = raycast.get_collider()
+        %Label.text = collider.name
 
-    debug_arrow = DebugDraw.draw_arrow(
-      raycast.get_collider().global_position,
-      raycast.get_collider().global_position + collision_normal,
-      Color.RED,
-      0.2, # arrowhead size
-      0.05, # thickness
-    )
+        if current_interactable_target != collider:
+            Interactable.emit_interactable_signal(Interactable.signal_unhover, current_interactable_target)
+            current_interactable_target = collider
+            Interactable.emit_interactable_signal(Interactable.signal_hover, collider)
 
+        if Input.is_action_just_pressed(Interactable.interaction_input_action):
+            Interactable.emit_interactable_signal(Interactable.signal_interact, collider)
+            print(collider)
+            if collider.get_node('Stamp') is StampableMesh:
+                print("Stamping")
+                var ray_origin = raycast.global_position
+                var ray_dir = (raycast.get_collision_point() - raycast.global_position).normalized()
+                collider.get_node('Stamp').stamp_from_world_ray(ray_origin, ray_dir)
+        #   raycast.get_collider().interact(self.global_position)
+        
+        # Draw arrow to collision point
+        var raycast_end := raycast.get_collision_point()
+        var collision_normal := raycast.get_collision_normal()
 
-    # draw_debug_arrow(raycast_end + collision_normal)
+        if debug_arrow:
+            debug_arrow.queue_free()
+            debug_arrow = null
 
-  else:
-    %Label.text = "No object in range"
-    
-    # Draw arrow to end of raycast
-    var raycast_end := raycast.global_position + raycast.target_position
-    draw_debug_arrow(raycast_end)
+        if current_interactable_target == null:
+            return
+
+        debug_arrow = DebugDraw.draw_arrow(
+            raycast.get_collider().global_position,
+            raycast.get_collider().global_position + collision_normal,
+            Color.RED,
+            0.2, # arrowhead size
+            0.05, # thickness
+        )
+
+    else:
+        if current_interactable_target != null:
+            Interactable.emit_interactable_signal(Interactable.signal_unhover, current_interactable_target)
+            if debug_arrow:
+                debug_arrow.queue_free()
+                debug_arrow = null
+            current_interactable_target = null
+
+        %Label.text = "No object in range"
+        
+        # Draw arrow to end of raycast
+        var raycast_end := raycast.global_position + raycast.target_position
 
 
 ## Rotate us to look around.
 ## Base of controller rotates around y (left/right). Head rotates around x (up/down).
 ## Modifies look_rotation based on rot_input, then resets basis and rotates by look_rotation.
 func rotate_look(rot_input: Vector2):
-  look_rotation.x -= rot_input.y * look_speed
-  look_rotation.x = clamp(look_rotation.x, deg_to_rad(-85), deg_to_rad(85))
-  look_rotation.y -= rot_input.x * look_speed
-  transform.basis = Basis()
-  rotate_y(look_rotation.y)
-  head.transform.basis = Basis()
-  head.rotate_x(look_rotation.x)
+    look_rotation.x -= rot_input.y * look_speed
+    look_rotation.x = clamp(look_rotation.x, deg_to_rad(-85), deg_to_rad(85))
+    look_rotation.y -= rot_input.x * look_speed
+    transform.basis = Basis()
+    rotate_y(look_rotation.y)
+    head.transform.basis = Basis()
+    head.rotate_x(look_rotation.x)
 
 
 func enable_freefly():
-  collider.disabled = true
-  freeflying = true
-  velocity = Vector3.ZERO
+    collider.disabled = true
+    freeflying = true
+    velocity = Vector3.ZERO
 
 func disable_freefly():
-  collider.disabled = false
-  freeflying = false
+    collider.disabled = false
+    freeflying = false
 
 
 func capture_mouse():
-  Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-  mouse_captured = true
+    Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+    mouse_captured = true
 
 
 func release_mouse():
-  Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-  mouse_captured = false
+    Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+    mouse_captured = false
 
 
 ## Checks if some Input Actions haven't been created.
 ## Disables functionality accordingly.
 func check_input_mappings():
-  if can_move and not InputMap.has_action(input_left):
-    push_error("Movement disabled. No InputAction found for input_left: " + input_left)
-    can_move = false
-  if can_move and not InputMap.has_action(input_right):
-    push_error("Movement disabled. No InputAction found for input_right: " + input_right)
-    can_move = false
-  if can_move and not InputMap.has_action(input_forward):
-    push_error("Movement disabled. No InputAction found for input_forward: " + input_forward)
-    can_move = false
-  if can_move and not InputMap.has_action(input_back):
-    push_error("Movement disabled. No InputAction found for input_back: " + input_back)
-    can_move = false
-  if can_jump and not InputMap.has_action(input_jump):
-    push_error("Jumping disabled. No InputAction found for input_jump: " + input_jump)
-    can_jump = false
-  if can_sprint and not InputMap.has_action(input_sprint):
-    push_error("Sprinting disabled. No InputAction found for input_sprint: " + input_sprint)
-    can_sprint = false
-  if can_freefly and not InputMap.has_action(input_freefly):
-    push_error("Freefly disabled. No InputAction found for input_freefly: " + input_freefly)
-    can_freefly = false
+    if can_move and not InputMap.has_action(input_left):
+        push_error("Movement disabled. No InputAction found for input_left: " + input_left)
+        can_move = false
+    if can_move and not InputMap.has_action(input_right):
+        push_error("Movement disabled. No InputAction found for input_right: " + input_right)
+        can_move = false
+    if can_move and not InputMap.has_action(input_forward):
+        push_error("Movement disabled. No InputAction found for input_forward: " + input_forward)
+        can_move = false
+    if can_move and not InputMap.has_action(input_back):
+        push_error("Movement disabled. No InputAction found for input_back: " + input_back)
+        can_move = false
+    if can_jump and not InputMap.has_action(input_jump):
+        push_error("Jumping disabled. No InputAction found for input_jump: " + input_jump)
+        can_jump = false
+    if can_sprint and not InputMap.has_action(input_sprint):
+        push_error("Sprinting disabled. No InputAction found for input_sprint: " + input_sprint)
+        can_sprint = false
+    if can_freefly and not InputMap.has_action(input_freefly):
+        push_error("Freefly disabled. No InputAction found for input_freefly: " + input_freefly)
+        can_freefly = false
 
 
 ## Draws a debug arrow from the player to the specified end position.
 func draw_debug_arrow(end_position: Vector3) -> void:
-  # Remove old arrow if it exists
-  if debug_arrow:
-    debug_arrow.queue_free()
-    debug_arrow = null
-  
-  # Get player position (use head position for better visual)
-  var player_position := head.global_position if head else global_position
-  
-  # Draw new arrow
-  debug_arrow = DebugDraw.draw_arrow(
-    player_position,
-    end_position,
-    Color.YELLOW,
-    0.2, # arrowhead size
-    0.05, # thickness
-    self # parent
-  )
+    # Remove old arrow if it exists
+    if debug_arrow:
+        debug_arrow.queue_free()
+        debug_arrow = null
+    
+    # Get player position (use head position for better visual)
+    var player_position := head.global_position if head else global_position
+    
+    # Draw new arrow
+    debug_arrow = DebugDraw.draw_arrow(
+        player_position,
+        end_position,
+        Color.YELLOW,
+        0.2, # arrowhead size
+        0.05, # thickness
+        self # parent
+    )
